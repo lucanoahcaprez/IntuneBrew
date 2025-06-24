@@ -79,6 +79,8 @@ function Write-WebhookNotification {
         [Parameter(Mandatory = $false)]
         [string]$AppBundleId,
         [Parameter(Mandatory = $false)]
+        [string]$Message,
+        [Parameter(Mandatory = $false)]
         [string]$WebhookUrl = (Get-AutomationVariable -Name 'WebhookUrl' -ErrorAction SilentlyContinue)
     )
     if ($WebhookUrl) {
@@ -136,6 +138,10 @@ function Write-WebhookNotification {
                                     {
                                       "title": "App Bundle ID",
                                       "value": "!AppBundleId"
+                                    },
+                                    {
+                                      "title": "Message",
+                                      "value": "!Message"
                                     }
                                   ]
                                 }
@@ -852,7 +858,24 @@ function Get-IntuneApps {
             $response = Invoke-MgGraphRequest -Uri $intuneQueryUri -Method Get
             if ($response.value.Count -gt 0) {
                 # Find the latest version among potentially multiple entries
-                $latestAppEntry = $response.value | Sort-Object -Property @{Expression = { [Version]($_.primaryBundleVersion -replace '-.*$') } } -Descending | Select-Object -First 1
+                $latestAppEntry = $response.value | Sort-Object -Property @{Expression = { 
+                        try {
+                            # Clean version string and ensure it has at least major.minor format
+                            $cleanVersion = $_.primaryBundleVersion -replace '-.*$'
+                            # If version is just a single number (e.g., "15"), append ".0"
+                            if ($cleanVersion -match '^\d+$') {
+                                $cleanVersion = "$cleanVersion.0"
+                            }
+                            # If version has only two parts (e.g., "15.1"), it's already valid
+                            # If version has more parts, Version constructor will handle it
+                            [Version]$cleanVersion
+                        }
+                        catch {
+                            # If version parsing fails, use creation date as fallback
+                            [DateTime]$_.createdDateTime
+                        }
+                    } 
+                } -Descending | Select-Object -First 1
 
                 $intuneVersion = $latestAppEntry.primaryBundleVersion
                 $intuneAppId = $latestAppEntry.id # Get the ID of the latest version
@@ -1321,12 +1344,14 @@ foreach ($app in $appsToUpload) {
 
         Write-Log "Successfully processed $($appInfo.name)"
         Write-Log "App is now available in Intune Portal: https://intune.microsoft.com/#view/Microsoft_Intune_Apps/SettingsMenu/~/0/appId/$($newApp.id)"
-        Write-WebhookNotification -Message "Successfully processed $($appInfo.name) (ID: $($newApp.id))" -Type "Success"
+        Write-WebhookNotification -AppName $appInfo.name -AppId $newApp.id -AppDescription $appDescription -AppVersionNew $app.GitHubVersion -AppVersionOld $app.IntuneVersion -AppUrl -AppBundleId $appBundleId -Status "Success" -Message "Application $($appInfo.name) has been successfully updated to version $($app.GitHubVersion)."
         Write-Log " " -Type "Info"
     }
     catch {
         Write-Log "Critical error processing $($app.Name): $_" -Type "Error"
         Write-Log "Moving to next application..." -Type "Info"
+        Write-WebhookNotification -AppName $appInfo.name -AppId $newApp.id -AppDescription $appDescription -AppVersionNew $app.GitHubVersion -AppVersionOld $app.IntuneVersion -AppUrl -AppBundleId $appBundleId -Status "Error" -Message "An error occurred while processing application $($appInfo.name): $_"
+
         continue
     }
 }
@@ -1334,5 +1359,3 @@ foreach ($app in $appsToUpload) {
 Write-Log "All operations completed successfully!"
 Write-Log "Disconnecting from Microsoft Graph"
 Disconnect-MgGraph > $null 2>&1
-
-
