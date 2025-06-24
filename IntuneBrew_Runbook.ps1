@@ -61,6 +61,111 @@ function Write-Log {
     }
 }
 
+# Function to notify Teams webhook
+function Write-WebhookNotification {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$AppName,
+        [Parameter(Mandatory = $true)]
+        [string]$AppId,
+        [Parameter(Mandatory = $false)]
+        [string]$AppDescription,
+        [Parameter(Mandatory = $false)]
+        [string]$AppVersionNew,
+        [Parameter(Mandatory = $false)]
+        [string]$AppVersionOld,
+        [Parameter(Mandatory = $false)]
+        [string]$AppUrl,
+        [Parameter(Mandatory = $false)]
+        [string]$AppBundleId,
+        [Parameter(Mandatory = $false)]
+        [string]$WebhookUrl = (Get-AutomationVariable -Name 'WebhookUrl' -ErrorAction SilentlyContinue)
+    )
+    if ($WebhookUrl) {
+        #Building Teams Card
+        $Card = '
+{
+                    "type": "message",
+                    "attachments":[
+                       {
+                          "contentType":"application/vnd.microsoft.card.adaptive",
+                          "contentUrl":null,
+                          "content":{
+                             "$schema":"http://adaptivecards.io/schemas/adaptive-card.json",
+                             "type":"AdaptiveCard",
+                             "version":"1.3",
+                             "body":[
+                                 {
+                                     "type": "Image",
+                                     "url": "https://www.intunebrew.com/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fbeer-mug.bf18f444.webp&w=32&q=75&dpl=dpl_FxEJndfdb6vu4V9ZeqSgYczR2mmG",
+                                     "height": "30px",
+                                     "altText": "IntuneBrew Logo"
+                                 },
+                                 {
+                                 "type": "TextBlock",
+                                 "text": "**IntuneBrew Update Automation**",
+                                 "style": "heading"
+                                },                                {
+                                 "type": "TextBlock",
+                                 "wrap": "true",
+                                 "text": "New macOS app version was deployed to Intune for App: [!AppName](https://intune.microsoft.com/#view/Microsoft_Intune_Apps/SettingsMenu/~/0/appId/!AppId)"
+                                },
+                                {
+                                  "type": "FactSet",
+                                  "facts": [
+                                    {
+                                      "title": "App Name",
+                                      "value": "!AppName"
+                                    },
+                                    {
+                                      "title": "App Description",
+                                      "value": "!AppDescription"
+                                    },
+                                    {
+                                      "title": "App Version New",
+                                      "value": "!AppVersionNew"
+                                    },
+                                    {
+                                      "title": "App Version Previous",
+                                      "value": "!AppVersionOld"
+                                    },
+                                    {
+                                      "title": "App URL",
+                                      "value": "!AppUrl"
+                                    },
+                                    {
+                                      "title": "App Bundle ID",
+                                      "value": "!AppBundleId"
+                                    }
+                                  ]
+                                }
+                             ]
+                            }
+                          }
+                        ]
+}'      # replacing Variables starting with !Text in the Card
+        # Use regex to find all !variable patterns and replace them with corresponding PowerShell variable values
+        $Card = [regex]::Replace($Card, '!(\w+)', {
+                param($match)
+                $variableName = $match.Groups[1].Value
+                $variableValue = Get-Variable -Name $variableName -ValueOnly -ErrorAction SilentlyContinue
+                if ($null -ne $variableValue) {
+                    return $variableValue
+                }
+                return $match.Value  # Return original if variable not found
+            })
+
+        #sending the card to the webhook
+        try {
+            # Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $Card
+            Invoke-RestMethod -Method Post -Body $Card -Uri $WebhookUrl -Headers @{"content-type" = "application/json; charset=UTF-8" }
+        }
+        catch {
+            Throw "Could not send card to the specified webhook $_"
+        }
+    }
+}
+
 Write-Log "Starting IntuneBrew Automation Runbook - Version 0.1"
 
 # Authentication START
@@ -1167,7 +1272,7 @@ foreach ($app in $appsToUpload) {
         }
         Invoke-MgGraphRequest -Method PATCH -Uri $updateAppUri -Body ($updateData | ConvertTo-Json)
 
-            # Apply assignments if the flag is set and assignments were successfully fetched
+        # Apply assignments if the flag is set and assignments were successfully fetched
         if ($copyAssignments -and $existingAssignments -ne $null) {
             Set-IntuneAppAssignments -NewAppId $newApp.id -Assignments $existingAssignments
             # Now remove assignments from the old app version
@@ -1216,6 +1321,7 @@ foreach ($app in $appsToUpload) {
 
         Write-Log "Successfully processed $($appInfo.name)"
         Write-Log "App is now available in Intune Portal: https://intune.microsoft.com/#view/Microsoft_Intune_Apps/SettingsMenu/~/0/appId/$($newApp.id)"
+        Write-WebhookNotification -Message "Successfully processed $($appInfo.name) (ID: $($newApp.id))" -Type "Success"
         Write-Log " " -Type "Info"
     }
     catch {
