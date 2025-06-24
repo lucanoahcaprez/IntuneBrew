@@ -81,75 +81,118 @@ function Write-WebhookNotification {
         [Parameter(Mandatory = $false)]
         [string]$Message,
         [Parameter(Mandatory = $false)]
+        [string]$Status,
+        [Parameter(Mandatory = $false)]
         [string]$WebhookUrl = (Get-AutomationVariable -Name 'WebhookUrl' -ErrorAction SilentlyContinue)
     )
     if ($WebhookUrl) {
+        if ($Status -eq "success") {
+            $StatusColor = "Good"
+        }
+        elseif ($Status -eq "error") {
+            $StatusColor = "Attention"
+        }
+        else {
+            $StatusColor = "Warning" # Optional fallback
+        }
+
+        $Status = $Status.ToUpper()
+
         #Building Teams Card
         $Card = '
 {
-                    "type": "message",
-                    "attachments":[
-                       {
-                          "contentType":"application/vnd.microsoft.card.adaptive",
-                          "contentUrl":null,
-                          "content":{
-                             "$schema":"http://adaptivecards.io/schemas/adaptive-card.json",
-                             "type":"AdaptiveCard",
-                             "version":"1.3",
-                             "body":[
-                                 {
-                                     "type": "Image",
-                                     "url": "https://www.intunebrew.com/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fbeer-mug.bf18f444.webp&w=32&q=75&dpl=dpl_FxEJndfdb6vu4V9ZeqSgYczR2mmG",
-                                     "height": "30px",
-                                     "altText": "IntuneBrew Logo"
-                                 },
-                                 {
-                                 "type": "TextBlock",
-                                 "text": "**IntuneBrew Update Automation**",
-                                 "style": "heading"
-                                },                                {
-                                 "type": "TextBlock",
-                                 "wrap": "true",
-                                 "text": "New macOS app version was deployed to Intune for App: [!AppName](https://intune.microsoft.com/#view/Microsoft_Intune_Apps/SettingsMenu/~/0/appId/!AppId)"
-                                },
-                                {
-                                  "type": "FactSet",
-                                  "facts": [
-                                    {
-                                      "title": "App Name",
-                                      "value": "!AppName"
-                                    },
-                                    {
-                                      "title": "App Description",
-                                      "value": "!AppDescription"
-                                    },
-                                    {
-                                      "title": "App Version New",
-                                      "value": "!AppVersionNew"
-                                    },
-                                    {
-                                      "title": "App Version Previous",
-                                      "value": "!AppVersionOld"
-                                    },
-                                    {
-                                      "title": "App URL",
-                                      "value": "!AppUrl"
-                                    },
-                                    {
-                                      "title": "App Bundle ID",
-                                      "value": "!AppBundleId"
-                                    },
-                                    {
-                                      "title": "Message",
-                                      "value": "!Message"
-                                    }
-                                  ]
-                                }
-                             ]
-                            }
-                          }
-                        ]
-}'      # replacing Variables starting with !Text in the Card
+  "type": "message",
+  "attachments": [
+    {
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "contentUrl": null,
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.3",
+        "body": [
+          {
+            "type": "ColumnSet",
+            "columns": [
+              {
+                "type": "Column",
+                "width": "stretch",
+                "items": [
+                  {
+                    "type": "Image",
+                    "url": "https://www.intunebrew.com/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fbeer-mug.bf18f444.webp&w=32&q=75&dpl=dpl_FxEJndfdb6vu4V9ZeqSgYczR2mmG",
+                    "height": "30px",
+                    "altText": "IntuneBrew Logo"
+                  }
+                ]
+              },
+              {
+                "type": "Column",
+                "width": "auto",
+                "items": [
+                  {
+                    "type": "TextBlock",
+                    "text": "!Status",
+                    "color": "!StatusColor",
+                    "weight": "Bolder",
+                    "horizontalAlignment": "Right",
+                    "size": "Small",
+                    "wrap": true,
+                    "spacing": "None"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "TextBlock",
+            "text": "**IntuneBrew Update Automation**",
+            "wrap": true
+          },
+          {
+            "type": "TextBlock",
+            "wrap": true,
+            "text": "New macOS app version was deployed to Intune for App: [!AppName](https://intune.microsoft.com/#view/Microsoft_Intune_Apps/SettingsMenu/~/0/appId/!AppId)"
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "App Name",
+                "value": "!AppName"
+              },
+              {
+                "title": "App Description",
+                "value": "!AppDescription"
+              },
+              {
+                "title": "App Version New",
+                "value": "!AppVersionNew"
+              },
+              {
+                "title": "App Version Previous",
+                "value": "!AppVersionOld"
+              },
+              {
+                "title": "App URL",
+                "value": "!AppUrl"
+              },
+              {
+                "title": "App Bundle ID",
+                "value": "!AppBundleId"
+              },
+              {
+                "title": "Message",
+                "value": "!Message"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}'
+        # replacing Variables starting with !Text in the Card
         # Use regex to find all !variable patterns and replace them with corresponding PowerShell variable values
         $Card = [regex]::Replace($Card, '!(\w+)', {
                 param($match)
@@ -165,6 +208,7 @@ function Write-WebhookNotification {
         try {
             # Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $Card
             Invoke-RestMethod -Method Post -Body $Card -Uri $WebhookUrl -Headers @{"content-type" = "application/json; charset=UTF-8" }
+            Write-Log "Sent information to Webhook" -Type "Info"
         }
         catch {
             Throw "Could not send card to the specified webhook $_"
@@ -1344,13 +1388,16 @@ foreach ($app in $appsToUpload) {
 
         Write-Log "Successfully processed $($appInfo.name)"
         Write-Log "App is now available in Intune Portal: https://intune.microsoft.com/#view/Microsoft_Intune_Apps/SettingsMenu/~/0/appId/$($newApp.id)"
-        Write-WebhookNotification -AppName $appInfo.name -AppId $newApp.id -AppDescription $appDescription -AppVersionNew $app.GitHubVersion -AppVersionOld $app.IntuneVersion -AppUrl -AppBundleId $appBundleId -Status "Success" -Message "Application $($appInfo.name) has been successfully updated to version $($app.GitHubVersion)."
+        if ($WebhookUrl) {
+            Write-WebhookNotification -AppName $appInfo.name -AppId $newApp.id -AppDescription $appDescription -AppVersionNew $app.GitHubVersion -AppVersionOld $app.IntuneVersion -AppUrl $appInfo.url -AppBundleId $appBundleId -Status "success" -Message "Application $($appInfo.name) has been successfully updated to version $($app.GitHubVersion)."
+            Write-Log "Sent information to Webhook" -Type "Info"
+        }
         Write-Log " " -Type "Info"
     }
     catch {
         Write-Log "Critical error processing $($app.Name): $_" -Type "Error"
         Write-Log "Moving to next application..." -Type "Info"
-        Write-WebhookNotification -AppName $appInfo.name -AppId $newApp.id -AppDescription $appDescription -AppVersionNew $app.GitHubVersion -AppVersionOld $app.IntuneVersion -AppUrl -AppBundleId $appBundleId -Status "Error" -Message "An error occurred while processing application $($appInfo.name): $_"
+        Write-WebhookNotification -AppName $appInfo.name -AppId $newApp.id -AppDescription $appDescription -AppVersionNew $app.GitHubVersion -AppVersionOld $app.IntuneVersion -AppUrl $appInfo.url -AppBundleId $appBundleId -Status "error" -Message "An error occurred while processing application $($appInfo.name): $_"
 
         continue
     }
