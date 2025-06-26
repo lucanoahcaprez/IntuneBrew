@@ -68,6 +68,7 @@ This project uses publicly available metadata from Homebrew’s JSON API. Homebr
   - [Using Configuration File](#using-configuration-file)
   - [Copy Assignments](#copy-assignments-1)
   - [App JSON Structure](#app-json-structure)
+  - [Implementing Update Notifications](#implement-update-notifications)
 - [🔄 Version Management](#-version-management)
 - [🛠️ Error Handling](#️-error-handling)
 - [🤔 Troubleshooting](#-troubleshooting)
@@ -916,6 +917,18 @@ Apps are defined in JSON files with the following structure:
   "fileName": "app.dmg"
 }
 ```
+
+### 🔔 Implement Update Notifications
+
+If configured in the automation account, IntuneBrew sends status notifications to Webhook after each macOS app is uploaded to Intune. These notifications include key details like the app name, version changes, vendor download link, and a short success or failure message. This helps admins stay informed about app update progress without manual checks.
+
+The Webhook sends Adaptive Cards payload. So Microsoft Teams for example can interprete this content and create a new post inside a channel. That could look like this:
+
+\<add image here>
+
+To enable Teams notifications, create a new Variable inside your Automation Account named WebhookUrl. The value should be the appropriate Microsoft Teams Incoming Webhook URL.
+For Teams-based workflows, ensure that the Teams channel webhook permissions are set to public to allow the automation to post messages successfully.
+
 
 ## 🔄 Version Management
 

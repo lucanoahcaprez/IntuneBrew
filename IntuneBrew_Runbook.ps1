@@ -1388,10 +1388,8 @@ foreach ($app in $appsToUpload) {
 
         Write-Log "Successfully processed $($appInfo.name)"
         Write-Log "App is now available in Intune Portal: https://intune.microsoft.com/#view/Microsoft_Intune_Apps/SettingsMenu/~/0/appId/$($newApp.id)"
-        if ($WebhookUrl) {
-            Write-WebhookNotification -AppName $appInfo.name -AppId $newApp.id -AppDescription $appDescription -AppVersionNew $app.GitHubVersion -AppVersionOld $app.IntuneVersion -AppUrl $appInfo.url -AppBundleId $appBundleId -Status "success" -Message "Application $($appInfo.name) has been successfully updated to version $($app.GitHubVersion)."
-            Write-Log "Sent information to Webhook" -Type "Info"
-        }
+        
+        Write-WebhookNotification -AppName $appInfo.name -AppId $newApp.id -AppDescription $appDescription -AppVersionNew $app.GitHubVersion -AppVersionOld $app.IntuneVersion -AppUrl $appInfo.url -AppBundleId $appBundleId -Status "success" -Message "Application $($appInfo.name) has been successfully updated to version $($app.GitHubVersion)."
         Write-Log " " -Type "Info"
     }
     catch {
